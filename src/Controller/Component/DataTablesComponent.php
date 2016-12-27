@@ -74,7 +74,7 @@ class DataTablesComponent extends Component
      * @param $options: Query options from the request
      * @return: returns true if additional filtering takes place
      */
-    private function _filter(array &$options)
+    private function _filter(array &$options) : bool
     {
         // -- add limit
         if (!empty($this->request->query['length'])) {
@@ -91,7 +91,7 @@ class DataTablesComponent extends Component
             return false;
 
         // -- check table search field
-        $globalSearch = isset($this->request->query['search']['value']) ? $this->request->query['search']['value'] : false;
+        $globalSearch = $this->request->query['search']['value'] ?? false;
         if ($globalSearch && !empty($options['delegateSearch'])) {
             $options['globalSearch'] = $globalSearch;
             return true; // TODO: support for deferred local search
@@ -182,7 +182,7 @@ class DataTablesComponent extends Component
     {
         $controller = $this->_registry->getController();
 
-        $_serialize = isset($controller->viewVars['_serialize']) ? $controller->viewVars['_serialize'] : [];
+        $_serialize = $controller->viewVars['_serialize'] ?? [];
         $_serialize = array_merge($_serialize, array_keys($this->_viewVars));
 
         $controller->set($this->_viewVars);
@@ -198,6 +198,7 @@ class DataTablesComponent extends Component
             $this->config('conditionsOr', $condition); // merges
             return;
         }
+    
 
         list($association, $field) = explode('.', $column);
         if ($this->_tableName == $association) {

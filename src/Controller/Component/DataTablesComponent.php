@@ -12,9 +12,9 @@ class DataTablesComponent extends Component
 
     protected $_defaultConfig = [
         'start' => 0,
-        'length' => 20,
+        'length' => 10,
         'order' => [],
-        'prefixSearch' => true, // use "LIKE …%" instead of "LIKE %…%" conditions
+        'prefixSearch' => false, // use "LIKE …%" instead of "LIKE %…%" conditions
         'conditionsOr' => [],  // table-wide search conditions
         'conditionsAnd' => [], // column search conditions
         'matching' => [],      // column search conditions for foreign tables
@@ -49,14 +49,23 @@ class DataTablesComponent extends Component
      */
     private function _order(array &$options)
     {
-        if (empty($this->request->query['order']))
+        
+        if (!isset($this->request->query['iSortCol_0'])){
             return;
+        }
+
+        // get the column to sort on and the sort order - copy into vars for convenience
+        $column='mDataProp_'.$this->request->query['iSortCol_0'];
+        $sortOrder=$this->request->query['sSortDir_0'];
 
         // -- add custom order
         $order = $this->config('order');
-        foreach($this->request->query['order'] as $item) {
-            $order[$this->request->query['columns'][$item['column']]['name']] = $item['dir'];
-        }
+        
+        //foreach($this->request->query['order'] as $item) {
+            //$order[$this->request->query['columns'][$item['column']]['name']] = $item['dir'];
+        //}
+        $order[$this->request->query[$column]] = $sortOrder;
+
         if (!empty($options['delegateOrder'])) {
             $options['customOrder'] = $order;
         } else {
@@ -65,6 +74,7 @@ class DataTablesComponent extends Component
 
         // -- remove default ordering as we have a custom one
         unset($options['order']);
+        
     }
 
     /**
@@ -74,24 +84,25 @@ class DataTablesComponent extends Component
      * @param $options: Query options from the request
      * @return: returns true if additional filtering takes place
      */
-    private function _filter(array &$options) : bool
+    private function _filter(array &$options)
     {
+
         // -- add limit
-        if (!empty($this->request->query['length'])) {
-            $this->config('length', $this->request->query['length']);
+        if (!empty($this->request->query['iDisplayLength'])) {
+            $this->config('length', $this->request->query['iDisplayLength']);
         }
 
         // -- add offset
-        if (!empty($this->request->query['start'])) {
-            $this->config('start', (int)$this->request->query['start']);
+        if (!empty($this->request->query['iDisplayStart'])) {
+            $this->config('start', (int)$this->request->query['iDisplayStart']);
         }
 
         // -- don't support any search if columns data missing
-        if (empty($this->request->query['columns']))
+        if (empty($this->request->query['iColumns']))
             return false;
 
         // -- check table search field
-        $globalSearch = $this->request->query['search']['value'] ?? false;
+        $globalSearch = isset($this->request->query['sSearch']) ? $this->request->query['sSearch'] : false;
         if ($globalSearch && !empty($options['delegateSearch'])) {
             $options['globalSearch'] = $globalSearch;
             return true; // TODO: support for deferred local search
@@ -99,18 +110,25 @@ class DataTablesComponent extends Component
 
         // -- add conditions for both table-wide and column search fields
         $filters = false;
-        foreach ($this->request->query['columns'] as $column) {
-            if ($globalSearch && $column['searchable'] == 'true') {
-                $this->_addCondition($column['name'], $globalSearch, 'or');
+
+        for($count = 0; $count < $this->request->query['iColumns']; $count++){
+ 
+            //if ($globalSearch && $column['searchable'] == 'true') {
+            if ($globalSearch && $this->request->query['bSearchable_'.$count.''] == 'true') {      
+                $this->_addCondition($this->request->query['mDataProp_'.$count.''], $globalSearch, 'or');      
                 $filters = true;
             }
-            $localSearch = $column['search']['value'];
+            $localSearch = $this->request->query['sSearch_'.$count];
+            
             if (!empty($localSearch)) {
-                $this->_addCondition($column['name'], $column['search']['value']);
+                echo "We do not use Local (column seach) for the time being so print this message and quit"; exit;
+                $this->_addCondition($this->request->query['mDataProp_'.$count.''], $this->request->query['sSearch_'.$count]);           
                 $filters = true;
             }
         }
+
         return $filters;
+    
     }
 
     /**
@@ -123,6 +141,7 @@ class DataTablesComponent extends Component
      */
     public function find($tableName, $finder = 'all', array $options = [])
     {
+        
         $delegateSearch = !empty($options['delegateSearch']);
 
         // -- get table object
@@ -148,7 +167,9 @@ class DataTablesComponent extends Component
                 // call finder again to process filters (provided in $options)
                 $data = $table->find($finder, $options);
             } else {
+                
                 $data->where($this->config('conditionsAnd'));
+                       
                 foreach ($this->config('matching') as $association => $where) {
                     $data->matching($association, function ($q) use ($where) {
                         return $q->where($where);
@@ -157,6 +178,7 @@ class DataTablesComponent extends Component
                 if (!empty($this->config('conditionsOr'))) {
                     $data->where(['or' => $this->config('conditionsOr')]);
                 }
+                
             }
         }
 
@@ -182,7 +204,7 @@ class DataTablesComponent extends Component
     {
         $controller = $this->_registry->getController();
 
-        $_serialize = $controller->viewVars['_serialize'] ?? [];
+        $_serialize = isset($controller->viewVars['_serialize']) ? $controller->viewVars['_serialize'] : [];
         $_serialize = array_merge($_serialize, array_keys($this->_viewVars));
 
         $controller->set($this->_viewVars);
@@ -193,18 +215,21 @@ class DataTablesComponent extends Component
     {
         $right = $this->config('prefixSearch') ? "{$value}%" : "%{$value}%";
         $condition = ["{$column} LIKE" => $right];
+        
+        //debug($this->_tableName.' :: '.$type);
 
         if ($type === 'or') {
             $this->config('conditionsOr', $condition); // merges
             return;
         }
-    
 
+        // We only get here if we are NOT processing an 'OR' condition, eg conditions is an AND
         list($association, $field) = explode('.', $column);
+        
         if ($this->_tableName == $association) {
             $this->config('conditionsAnd', $condition); // merges
         } else {
-            $this->config('matching', [$association => $condition]); // merges
+            $this->config('matching', [$association => $condition]);      
         }
     }
 }

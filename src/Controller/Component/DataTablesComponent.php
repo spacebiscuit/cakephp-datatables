@@ -12,7 +12,7 @@ class DataTablesComponent extends Component
 
     protected $_defaultConfig = [
         'start' => 0,
-        'length' => 10,
+        'length' => 20,
         'order' => [],
         'prefixSearch' => true, // use "LIKE …%" instead of "LIKE %…%" conditions
         'conditionsOr' => [],  // table-wide search conditions
